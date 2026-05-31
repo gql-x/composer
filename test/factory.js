@@ -14,10 +14,11 @@ test("createComposer() returns the public api surface", () => {
 	assert.deepEqual(
 		Object.keys(composer).sort(),
 		[
-			"$f", "$m", "$t", "$v", "isGQLName",
-			"litArgs", "mutation", "operationName",
-			"query", "raw", "root", "selectionSet",
-			"subscription",	"varArgs", "varDefs",
+			"$d", "$f", "$m", "$t", "$v", "directives",
+			"isGQLName", "litArgs", "mutation",
+			"operationName", "query", "raw", "root",
+			"selectionSet", "subscription",	"varArgs",
+			"varDefs",
 		]
 	);
 });

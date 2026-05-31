@@ -22,6 +22,20 @@ var $tReserved = new Set([
 	"render",
 ]);
 
+var $dReserved = new Set([
+	"then",
+	"toString",
+	"valueOf",
+	"inspect",
+	"constructor",
+	"__proto__",
+	"prototype",
+	"caller",
+	"callee",
+	"arguments",
+	"render",
+]);
+
 selectionSet.none = () => selectionSet(null);
 
 
@@ -39,6 +53,7 @@ function buildComposer(opts = {}) {
 	// per-composer-instance private state
 	var $fStateSym = Symbol("gql.field.state");
 	var $tNameSym = Symbol("gql.name");
+	var $dTokenSym = Symbol("gql.directive");
 	var $fMeta = new WeakMap();
 	var $tCache = new Map();
 
@@ -62,14 +77,28 @@ function buildComposer(opts = {}) {
 	});
 
 
+	// *** $d: graphql directive proxy ***
+	// $d.foo => single-directive clause (no args)
+	// $d.foo(varArgs(..), litArgs(..)) => single-directive clause (with args)
+	var $d = new Proxy(Object.create(null),{
+		get(t,p,r) {
+			if (typeof p == "symbol") return undefined;
+			if ($dReserved.has(p)) return undefined;
+			if (!isGQLName(p)) return undefined;
+
+			return makeDirectiveClause(p,[]);
+		},
+	});
+
+
 	// *** readability alias for "no selection set" ***
 	$f.noSelection = null;
 
 
 	var api = {
-		$f, $t, $v, $m,
+		$f, $t, $v, $m, $d,
 		varArgs, litArgs, varDefs, operationName,
-		selectionSet, root,
+		selectionSet, root, directives,
 		raw, query, mutation, subscription,
 		isGQLName,
 	};
@@ -82,6 +111,8 @@ function buildComposer(opts = {}) {
 		nameToken,
 		is$tToken,
 		get$tTokenName,
+		isDirectiveToken,
+		getDirectiveTokenData,
 	};
 
 	return { api, _internals, };
@@ -121,6 +152,71 @@ function buildComposer(opts = {}) {
 		return (typeof v == "symbol") ? v : v[Symbol.toPrimitive]("default");
 	}
 
+	function isDirectiveToken(v) {
+		return !!(typeof v == "function" && v[$dTokenSym]);
+	}
+
+	function getDirectiveTokenData(v) {
+		return v[$dTokenSym];
+	}
+
+	// returns a callable that is ALSO a single-directive clause.
+	// - bare ($d.foo) usable directly as a clause: { directives: [<tok>] }
+	// - called ($d.foo(..)) returns a fresh clause w/ args attached
+	function makeDirectiveClause(name,args) {
+		// the callable itself
+		var tok = function directiveCallable(...combinators) {
+			return makeDirectiveClause(name,combinators);
+		};
+
+		// directive-token brand + payload
+		tok[$dTokenSym] = { name, args, };
+
+		// render protocol: emits "@name" or "@name(args)"
+		tok.render = function renderDirective(renderCtx) {
+			return renderDirectiveToken(tok,renderCtx);
+		};
+
+		// clause shape: this callable IS a directives-clause containing itself
+		Object.defineProperty(tok,"directives",{
+			enumerable: true,
+			configurable: false,
+			get() { return [ tok ]; },
+		});
+
+		return tok;
+	}
+
+	// renders a single directive token to "@name" or "@name(args)"
+	function renderDirectiveToken(tok,renderCtx) {
+		var { name, args, } = getDirectiveTokenData(tok);
+
+		if (!args || args.length == 0) {
+			return `@${name}`;
+		}
+
+		// build a synthetic field-meta from the directive's arg combinators
+		// and reuse the args-rendering pipeline
+		var merged = mergeChunks(args,`$d.${name}(..) part`);
+
+		var synthMeta = {
+			field: name,
+			argsWrapper: null,
+			varArgs: merged.varArgs || null,
+			litArgs: merged.litArgs || null,
+		};
+
+		var { varDefs, argsStr, } = renderCtx.renderFieldMeta(synthMeta);
+		renderCtx.addVarDefs(varDefs,`$d.${name}`);
+
+		// empty parens are invalid graphql — collapse to bare @name
+		if (!argsStr || argsStr == "()") {
+			return `@${name}`;
+		}
+
+		return `@${name}${argsStr}`;
+	}
+
 	function makeFieldToken(state) {
 		var tok = function tokenTag(strings,...values) {
 			var st = tok[$fStateSym];
@@ -150,6 +246,7 @@ function buildComposer(opts = {}) {
 					st.argsWrapper = meta.argsWrapper || null;
 					st.varArgs = meta.varArgs || null;
 					st.litArgs = meta.litArgs || null;
+					st.directives = meta.directives || null;
 				}
 				else {
 					if (!(extra && typeof extra == "object")) {
@@ -197,6 +294,7 @@ function buildComposer(opts = {}) {
 					argsWrapper: st.argsWrapper || null,
 					varArgs: st.varArgs || null,
 					litArgs: st.litArgs || null,
+					directives: st.directives || null,
 				}));
 			}
 
@@ -225,6 +323,7 @@ function buildComposer(opts = {}) {
 					argsWrapper: meta.argsWrapper || null,
 					varArgs: meta.varArgs || null,
 					litArgs: meta.litArgs || null,
+					directives: meta.directives || null,
 					sym: null,
 				};
 				return makeFieldToken(state);
@@ -252,6 +351,7 @@ function buildComposer(opts = {}) {
 					argsWrapper: meta.argsWrapper || null,
 					varArgs: meta.varArgs || null,
 					litArgs: meta.litArgs || null,
+					directives: meta.directives || null,
 					sym: null,
 				};
 				if (values.length > 1) {
@@ -283,6 +383,7 @@ function buildComposer(opts = {}) {
 				argsWrapper: null,
 				varArgs: null,
 				litArgs: null,
+				directives: null,
 				sym: null,
 			};
 
@@ -313,6 +414,7 @@ function buildComposer(opts = {}) {
 				argsWrapper: meta.argsWrapper,
 				varArgs: meta.varArgs,
 				litArgs: meta.litArgs,
+				directives: meta.directives,
 			};
 		}
 
@@ -324,6 +426,7 @@ function buildComposer(opts = {}) {
 			argsWrapper: null,
 			varArgs: null,
 			litArgs: null,
+			directives: null,
 			sym: null,
 		};
 
@@ -408,7 +511,7 @@ function buildComposer(opts = {}) {
 	function mergeFieldDefs(state,extra) {
 		if (!extra) return;
 
-		var { field, argsWrapper, varArgs, varFilters, litArgs, litFilters, } = extra;
+		var { field, argsWrapper, varArgs, varFilters, litArgs, litFilters, directives: dirs, } = extra;
 
 		if (field != null) {
 			if (!(typeof field == "string" && field.trim() != "")) {
@@ -457,6 +560,19 @@ function buildComposer(opts = {}) {
 			if (state.litArgs == null) state.litArgs = Object.create(null);
 			state.litArgs.filter = Object.assign(Object.create(null),state.litArgs.filter || null,litFilters);
 		}
+
+		if (dirs != null) {
+			if (!Array.isArray(dirs)) {
+				throw new Error("directives must be an array of directive tokens");
+			}
+			for (let d of dirs) {
+				if (!isDirectiveToken(d)) {
+					throw new Error("directives entries must be $d directive tokens");
+				}
+			}
+			// last-write-wins, consistent with other clause kinds
+			state.directives = dirs.slice();
+		}
 	}
 
 	function raw(...args) {
@@ -497,6 +613,7 @@ function buildComposer(opts = {}) {
 			argsWrapper: root.argsWrapper || null,
 			varArgs: null,
 			litArgs: null,
+			directives: (Array.isArray(root.directives) ? root.directives.slice() : null),
 		};
 
 		if (varInputs != null) {
@@ -542,6 +659,10 @@ function buildComposer(opts = {}) {
 			}
 		}
 
+		// top-level directives:[..] chunks attach to the OPERATION,
+		// not the root field. root-field directives come via root().directives(..)
+		var opDirectives = extractTopDirectives(args);
+
 		var sel = (
 			selectionSet ?
 				renderSelectionSetEx(selectionSet,namePrefix,nonPrefixedTypes,"selectionSet") :
@@ -586,6 +707,29 @@ function buildComposer(opts = {}) {
 		);
 		addVarDefs(rootArgVarDefs,"root",allVarDefs);
 
+		var { varDefs: rootDirVarDefs, directivesStr: rootDirectivesStr, } = renderDirectivesFromFieldMeta(
+			rootMeta,
+			namePrefix,
+			nonPrefixedTypes,
+			"root"
+		);
+		addVarDefs(rootDirVarDefs,"root.directives",allVarDefs);
+
+		// render operation-level directives FIRST (before allVarDefsStr is
+		// built and before opName fallback) so any vars introduced by directive
+		// args are folded into both
+		var opDirectivesStr = "";
+		if (opDirectives && opDirectives.length > 0) {
+			let { varDefs: opDirVarDefs, directivesStr, } = renderDirectivesFromFieldMeta(
+				{ directives: opDirectives, },
+				namePrefix,
+				nonPrefixedTypes,
+				"operation"
+			);
+			addVarDefs(opDirVarDefs,"operation.directives",allVarDefs);
+			opDirectivesStr = directivesStr;
+		}
+
 		var allVarDefsStr = (
 			Object.entries(allVarDefs)
 				.map(([varName,type]) => `$${varName}:${type}`)
@@ -607,8 +751,8 @@ function buildComposer(opts = {}) {
 		var aliasStr = rootAlias != null ? `${rootAlias}: ` : "";
 
 		var queryText =
-`${kind}${operationName != null ? ` ${operationName}` : ""}${allVarDefsStr ? `(${allVarDefsStr})` : ""} {
-	${aliasStr}${rootField}${rootArgsStr}${sel ? ` {
+`${kind}${operationName != null ? ` ${operationName}` : ""}${allVarDefsStr ? `(${allVarDefsStr})` : ""}${opDirectivesStr} {
+	${aliasStr}${rootField}${rootArgsStr}${rootDirectivesStr}${sel ? ` {
 		${sel.text}
 	}` : ""}
 }`;
@@ -619,6 +763,31 @@ function buildComposer(opts = {}) {
 			resName: (rootAlias || rootField),
 			kind,
 		};
+	}
+
+	// scans the raw(..) arg list (pre-merge) for any top-level
+	// directives:[..] chunks. last-write-wins, consistent with Object.assign.
+	// only ENUMERABLE own properties count — root()'s fluent .directives(..)
+	// method is non-enumerable and must not be mistaken for a directives clause.
+	function extractTopDirectives(rawArgs) {
+		var found = null;
+		for (let chunk of rawArgs) {
+			if (chunk == null) continue;
+			if (!isChunkObject(chunk)) continue;
+			let desc = Object.getOwnPropertyDescriptor(chunk,"directives");
+			if (!desc || !desc.enumerable) continue;
+			let dirs = chunk.directives;
+			if (!Array.isArray(dirs)) {
+				throw new Error("directives must be an array of directive tokens");
+			}
+			for (let d of dirs) {
+				if (!isDirectiveToken(d)) {
+					throw new Error("directives entries must be $d directive tokens");
+				}
+			}
+			found = dirs.slice();
+		}
+		return found;
 	}
 
 	function query(...args) {
@@ -719,6 +888,28 @@ function buildComposer(opts = {}) {
 		var argsStr = (innerArgsStr ? `(${innerArgsStr})` : "");
 
 		return { varDefs, argsStr, };
+	}
+
+	function renderDirectivesFromFieldMeta(meta,namePrefix,nonPrefixedTypes,sourceLabel) {
+		var varDefs = Object.create(null);
+
+		if (!meta.directives || meta.directives.length == 0) {
+			return { varDefs, directivesStr: "", };
+		}
+
+		var renderCtx = {
+			namePrefix,
+			nonPrefixedTypes,
+			renderFieldMeta(m) {
+				return renderArgsFromFieldMeta(m,namePrefix,nonPrefixedTypes,`${sourceLabel}.directive`);
+			},
+			addVarDefs(defs,label) {
+				addVarDefs(defs,label || `${sourceLabel}.directive`,varDefs);
+			},
+		};
+
+		var parts = meta.directives.map(d => d.render(renderCtx));
+		return { varDefs, directivesStr: ` ${parts.join(" ")}`, };
 	}
 
 	function buildArgsMapFromVarArgs(varArgs,namePrefix,nonPrefixedTypes,sourceLabel) {
@@ -980,8 +1171,16 @@ function buildComposer(opts = {}) {
 				);
 				mergeDefs(varDefs,`${ctxLabel}.${meta.field}.args`);
 
+				let { varDefs: dirVarDefs, directivesStr, } = renderDirectivesFromFieldMeta(
+					meta,
+					namePrefix,
+					nonPrefixedTypes,
+					`${ctxLabel}.${meta.alias || meta.field}`
+				);
+				mergeDefs(dirVarDefs,`${ctxLabel}.${meta.field}.directives`);
+
 				let aliasStr = meta.alias ? `${meta.alias}: ` : "";
-				return `${aliasStr}${meta.field}${argsStr}`;
+				return `${aliasStr}${meta.field}${argsStr}${directivesStr}`;
 			}
 			else if (sel != null && typeof sel == "object") {
 				let keys = Reflect.ownKeys(sel);
@@ -1009,11 +1208,19 @@ function buildComposer(opts = {}) {
 						);
 						mergeDefs(varDefs,`${ctxLabel}.${meta.field}.args`);
 
+						let { varDefs: dirVarDefs, directivesStr, } = renderDirectivesFromFieldMeta(
+							meta,
+							namePrefix,
+							nonPrefixedTypes,
+							`${ctxLabel}.${meta.alias || meta.field}`
+						);
+						mergeDefs(dirVarDefs,`${ctxLabel}.${meta.field}.directives`);
+
 						let aliasStr = meta.alias ? `${meta.alias}: ` : "";
 						let subSel = sel[k];
 
 						parts.push(
-							`${aliasStr}${meta.field}${argsStr}${
+							`${aliasStr}${meta.field}${argsStr}${directivesStr}${
 								subSel != null ? ` { ${render(subSel,`${ctxLabel}.${meta.field}`)} }` : ""
 							}`
 						);
@@ -1048,7 +1255,9 @@ function mergeChunks(parts,label = "chunk") {
 
 	for (let part of parts) {
 		if (part == null) continue;
-		if (!isChunkObject(part)) {
+		// accept plain chunk objects, OR functions (e.g. directive tokens
+		// whose enumerable own properties — like .directives — contribute).
+		if (!isChunkObject(part) && typeof part != "function") {
 			throw new Error(`Invalid ${label} (expected non-array object chunk)`);
 		}
 		Object.assign(out,part);
@@ -1250,7 +1459,22 @@ function selectionSet(...items) {
 function root(field,alias) {
 	var r = { field, };
 	if (alias !== undefined) r.alias = alias;
-	return { root: r, };
+	var chunk = { root: r, };
+
+	// non-enumerable fluent .directives(..) — doesn't leak into mergeChunks
+	Object.defineProperty(chunk,"directives",{
+		enumerable: false,
+		configurable: false,
+		writable: false,
+		value: function attachDirectives(...dirs) {
+			validateDirectiveTokens(dirs,"root().directives(..)");
+			return {
+				root: Object.assign(Object.create(null),r,{ directives: dirs.slice(), }),
+			};
+		},
+	});
+
+	return chunk;
 }
 
 function varArgs(...chunks) {
@@ -1267,4 +1491,25 @@ function varDefs(...chunks) {
 
 function operationName(name) {
 	return { operationName: name, };
+}
+
+function directives(...dirs) {
+	validateDirectiveTokens(dirs,"directives(..)");
+	return { directives: dirs.slice(), };
+}
+
+function validateDirectiveTokens(dirs,label) {
+	// duck-type: must be a function with a render method and a directives
+	// getter that returns a single-element array containing itself.
+	for (let d of dirs) {
+		if (!(
+			typeof d == "function" &&
+			typeof d.render == "function" &&
+			Array.isArray(d.directives) &&
+			d.directives.length == 1 &&
+			d.directives[0] === d
+		)) {
+			throw new Error(`${label} only accepts $d directive tokens`);
+		}
+	}
 }

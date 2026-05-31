@@ -4,7 +4,7 @@ import { createComposer, } from "@gql-x/composer";
 
 export const test = module("units");
 
-var { $f, $t, $v, $m, } = createComposer();
+var { $d, $f, $t, $v, $m, } = createComposer();
 
 
 // ************************
@@ -207,4 +207,48 @@ test("$f interpolation must come after name throws", () => {
 		var obj = {};
 		$f`name ${obj} extra`;
 	});
+});
+
+
+// ************************
+// $d proxy basics
+// ************************
+
+test("$d.name yields a usable directive token", () => {
+	var d = $d.nonreactive;
+	assert.equal(typeof d, "function");
+	assert.equal(typeof d.render, "function");
+	assert.ok(Array.isArray(d.directives));
+	assert.equal(d.directives.length, 1);
+	assert.equal(d.directives[0], d);
+});
+
+test("$d.name rejects invalid GQL names", () => {
+	assert.equal($d["bad-name"], undefined);
+	assert.equal($d[""], undefined);
+});
+
+test("$d.name skips reserved/probe names", () => {
+	assert.equal($d.then, undefined);
+	assert.equal($d.toString, undefined);
+	assert.equal($d.constructor, undefined);
+	assert.equal($d.render, undefined);
+});
+
+test("$d.foo() returns a fresh, distinct clause from bare $d.foo", () => {
+	var bare = $d.foo;
+	var called = $d.foo();
+	assert.notEqual(bare, called);
+	assert.equal(typeof called, "function");
+	assert.ok(Array.isArray(called.directives));
+});
+
+test("directives(..) rejects non-directive-token entries", () => {
+	assert.throws(() => directives("foo"));
+	assert.throws(() => directives({}));
+});
+
+test("root().directives(..) validates entries", () => {
+	assert.throws(() => root("User").directives("not-a-directive"));
+	assert.throws(() => root("User").directives({}));
 });

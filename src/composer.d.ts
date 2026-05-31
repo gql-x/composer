@@ -39,6 +39,16 @@ export type FieldToken = {
 	meta?: unknown;
 };
 
+// ---------- Directive token ----------
+// $d.foo is a callable that's also usable as a single-directive clause.
+// - bare ($d.foo) — structurally matches DirectiveClause via the .directives getter
+// - called ($d.foo(varArgs(..), litArgs(..))) — returns a fresh token w/ args attached
+export interface DirectiveToken {
+	(...args: (VarArgsClause | LitArgsClause | { varArgs: Record<string, Arg> } | { litArgs: Record<string, Arg> })[]): DirectiveToken;
+	readonly directives: readonly [DirectiveToken];
+	render(renderCtx: unknown): string;
+}
+
 // ---------- Value types (what goes inside clauses) ----------
 export type Arg =
 	| VarToken | NameToken | VarRefToken | MapToken | FieldToken
@@ -61,7 +71,11 @@ export type OperationNameClause = Branded<"operationName"> & {
 };
 
 export type RootClause = Branded<"root"> & {
-	root: { field: string; alias?: string | null };
+	root: {
+		field: string;
+		alias?: string | null;
+		directives?: readonly DirectiveToken[];
+	};
 };
 
 export type VarArgsClause = Branded<"varArgs"> & {
@@ -84,6 +98,10 @@ export type KindClause = Branded<"kind"> & {
 	kind: "query" | "mutation" | "subscription";
 };
 
+export type DirectiveClause = Branded<"directive"> & {
+	directives: readonly DirectiveToken[];
+};
+
 // Strict union — what helpers return
 export type Clause =
 	| OperationNameClause
@@ -92,17 +110,19 @@ export type Clause =
 	| LitArgsClause
 	| VarDefsClause
 	| SelectionSetClause
-	| KindClause;
+	| KindClause
+	| DirectiveClause;
 
 // Structural escape hatch — same shapes without brands
 export type ClauseShape =
 	| { operationName: string }
-	| { root: { field: string; alias?: string | null } }
+	| { root: { field: string; alias?: string | null; directives?: readonly DirectiveToken[] } }
 	| { varArgs: Record<string, Arg> }
 	| { litArgs: Record<string, Arg> }
 	| { varDefs: Record<string, TypedParam> }
 	| { selectionSet: readonly SelectionField[] | null }
-	| { kind: "query" | "mutation" | "subscription" };
+	| { kind: "query" | "mutation" | "subscription" }
+	| { directives: readonly DirectiveToken[] };
 
 // ---------- Result types ----------
 export type QueryResult = {
@@ -129,13 +149,28 @@ export type TProxy = {
 	readonly [key: string]: NameToken | VarRefToken;
 };
 
+// ---------- $d proxy ----------
+export type DProxy = {
+	readonly [key: string]: DirectiveToken;
+};
+
 // ---------- Args/varDefs input constraints ----------
 type ArgsInput = MapToken | { [key: string]: Arg };
 type VarDefsInput = VarToken | { [key: string]: TypedParam };
 
 // ---------- $f interpolation constraints ----------
-type NonEmptyClauseArray = readonly [Clause | ClauseShape, ...(Clause | ClauseShape)[]];
-type FieldInterpolation = NonEmptyClauseArray | ClauseShape;
+// A directive token may appear directly in a clause-array slot (single-
+// directive shorthand) or as part of the array alongside other clauses.
+type ClauseArrayEntry = Clause | ClauseShape | DirectiveToken;
+type NonEmptyClauseArray = readonly [ClauseArrayEntry, ...ClauseArrayEntry[]];
+type FieldInterpolation = NonEmptyClauseArray | ClauseShape | DirectiveToken;
+
+// ---------- root() fluent chunk ----------
+// root(...) returns a chunk that's both a usable RootClause AND has a
+// non-enumerable .directives(..) method for attaching root-field directives.
+export interface RootChunk extends RootClause {
+	directives(...dirs: DirectiveToken[]): RootClause;
+}
 
 // ---------- Helper function declarations ----------
 export function $v(name: string, type: string): VarToken;
@@ -150,7 +185,7 @@ export function $f(
 ): FieldToken & ((strings: TemplateStringsArray, ...values: FieldInterpolation[]) => FieldToken);
 
 export function operationName(name: string): OperationNameClause;
-export function root(field: string, alias?: string | null): RootClause;
+export function root(field: string, alias?: string | null): RootChunk;
 
 export function varArgs(...args: ArgsInput[]): VarArgsClause;
 export function litArgs(...args: ArgsInput[]): LitArgsClause;
@@ -161,6 +196,8 @@ export function selectionSet(none: null): SelectionSetClause;
 export namespace selectionSet {
 	function none(): SelectionSetClause;
 }
+
+export function directives(...dirs: DirectiveToken[]): DirectiveClause;
 
 export function isGQLName(name: unknown): boolean;
 
@@ -183,12 +220,14 @@ export type Composer = {
 	$t: TProxy;
 	$v: typeof $v;
 	$m: typeof $m;
+	$d: DProxy;
 	varArgs: typeof varArgs;
 	litArgs: typeof litArgs;
 	varDefs: typeof varDefs;
 	operationName: typeof operationName;
 	selectionSet: typeof selectionSet;
 	root: typeof root;
+	directives: typeof directives;
 	raw: typeof raw;
 	query: typeof query;
 	mutation: typeof mutation;
@@ -199,6 +238,8 @@ export type Composer = {
 // ---------- Plugin-author entry point ----------
 export type ComposerInternals = {
 	makeFieldToken: (...args: unknown[]) => FieldToken;
+	isDirectiveToken: (v: unknown) => v is DirectiveToken;
+	getDirectiveTokenData: (v: DirectiveToken) => { name: string; args: readonly unknown[] };
 	[key: string]: unknown;
 };
 

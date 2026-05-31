@@ -26,8 +26,8 @@ Composer is a factory-producing module: each call to `createComposer()` returns 
 import { createComposer } from "@gql-x/composer";
 
 var {
-    $f, $t, $v, $m,
-    varArgs, litArgs, varDefs,
+    $d, $f, $t, $v, $m,
+    varArgs, litArgs, varDefs, directives,
     selectionSet, root, operationName,
     raw, query, mutation, subscription,
     isGQLName,
@@ -106,11 +106,11 @@ Variables are declared inline where used, then hoisted into the parameter list (
 
 Composer provides two families of helpers, and both produce plain JS object structures that the query-builder consumes:
 
-1. **Option-key helpers** like `varArgs(..)`, `litArgs(..)`, `varDefs(..)`, `selectionSet(..)`, `root(..)`. Each produces a single-property object keyed by its option name. They're passed as variadic arguments to a builder (`raw(..)`, `query(..)`, etc).
+1. **Option-key combinators** like `varArgs(..)`, `litArgs(..)`, `varDefs(..)`, `selectionSet(..)`, `root(..)`. Each produces a single-property object keyed by its option name. They're passed as variadic arguments to a builder (`raw(..)`, `query(..)`, etc).
 
     In other words, `varArgs(..)` produces `{ varArgs: .. }`.
 
-2. **Chunk-producing helpers** like `$v(..)`, `$m(..)`, `` $f`...` ``. They produce structural object chunks for the inside of those options.
+2. **Unit-producing helpers** like `$v(..)`, `$m(..)`, `` $f`...` ``. They produce structural object units for the inside of those options.
 
     In other words, `$m(..)` produces `{ field: value }`.
 
@@ -195,6 +195,8 @@ The following options are recognized:
 
     Produces a root like `currentUser: user(..) { .. }`.
 
+    The `root(..)` unit also has a chained `.directives(..)` method for attaching GraphQL directives directly to the root field. See [GraphQL Directives](#graphql-directives) below.
+
 * `varArgs` (option): operation-level (and field-level) arguments whose values are variable type-defs. The builder hoists the type-defs into the operation parameter list automatically.
 
     For example:
@@ -249,13 +251,15 @@ The following options are recognized:
 
     To omit the selection-set block entirely: `selectionSet(null)`, `selectionSet($f.noSelection)`, or `selectionSet.none()`.
 
-## Chunk-Producing Helpers
+* `directives` (option): operation-level GraphQL directives, attached to the `query`/`mutation`/`subscription` keyword itself. See [GraphQL Directives](#graphql-directives) below.
+
+## Unit-Producing Helpers
 
 ### `$v`: Variable Leaf Specs
 
 `$v` builds variable leaf-specs for `varArgs` and `varDefs`.
 
-`$v(chunk1, chunk2, ..)` composes/merges chunks; it takes the place of an object literal on the right side of `varArgs:` / `varDefs:`, merging the individual leaf chunks passed in.
+`$v(unit1, unit2, ..)` composes/merges units; it takes the place of an object literal on the right side of `varArgs:` / `varDefs:`, merging the individual leaf units passed in.
 
 ```js
 varArgs: $v(
@@ -264,13 +268,13 @@ varArgs: $v(
 )
 ```
 
-**NOTE:** Since `$v(..)` composes object chunks, the chunks it accepts can also be object-spread directly into a regular object literal as a more flexible alternative.
+**NOTE:** Since `$v(..)` composes object units, the units it accepts can also be object-spread directly into a regular object literal as a more flexible alternative.
 
 The 2-arg form `$v(name,type)` defaults the variable name to the argument name:
 
 ```js
 $v("id","ID")
-// chunk: { id: "ID" }
+// unit: { id: "ID" }
 // type def: $id: ID, arg: id: $id
 ```
 
@@ -278,7 +282,7 @@ The 3-arg form `$v(name,varName,type)` sets the variable name explicitly:
 
 ```js
 $v("id","userID","ID")
-// chunk: { id: { userID: "ID" } }
+// unit: { id: { userID: "ID" } }
 // type def: $userID: ID, arg: id: $userID
 ```
 
@@ -314,11 +318,11 @@ The 2-arg form `$m(name,value)` produces a single-property object:
 
 ```js
 $m("order",$t.DESC)
-// chunk: { order: $t.DESC }
+// unit: { order: $t.DESC }
 // arg: order: DESC
 
 $m("foo",42)
-// chunk: { foo: 42 }
+// unit: { foo: 42 }
 // arg: foo: 42
 ```
 
@@ -328,18 +332,18 @@ Nesting requires explicit `$m` calls per level:
 $m("order",
     $m("title",$t.DESC)
 )
-// chunk: { order: { title: $t.DESC } }
+// unit: { order: { title: $t.DESC } }
 // arg: order: { title: DESC }
 ```
 
-Multiple chunk-objects as trailing args merge as siblings under the named property:
+Multiple unit-objects as trailing args merge as siblings under the named property:
 
 ```js
 $m("order",
     $m("title",$t.DESC),
     $m("year",$t.ASC)
 )
-// chunk: { order: { title: $t.DESC, year: $t.ASC } }
+// unit: { order: { title: $t.DESC, year: $t.ASC } }
 // args: order: { title: DESC, year: ASC }
 ```
 
@@ -419,7 +423,7 @@ selectionSet(
 
 Produces a field-level reference like `userFirstName: firstName`, which aliases the `firstName` field name to `userFirstName` in the result set.
 
-To use field-level arguments (and aliases, if desired) on an object field with sub-selection, pair the `$f` helper with `$m` to produce a computed-property selection-set entry. The `$f` interpolation accepts an array of chunks (merged together), so the option-key helpers and other chunk producers compose naturally inside it:
+To use field-level arguments (and aliases, if desired) on an object field with sub-selection, pair the `$f` helper with `$m` to produce a computed-property selection-set entry. The `$f` interpolation accepts an array of units (merged together), so the option-key helpers and other unit producers compose naturally inside it:
 
 ```js
 selectionSet(
@@ -437,7 +441,7 @@ selectionSet(
 
 **NOTE:** The `[ ]` surrounding the interpolation expression is there to allow the two argument-bearing values. If there's only one value being interpolated, you can pass it directly without the `[ ]` around it.
 
-The `$f` interpolation also accepts a single object literal directly, equivalent to the array-of-chunks form above:
+The `$f` interpolation also accepts a single object literal directly, equivalent to the array-of-units form above:
 
 ```js
 selectionSet(
@@ -460,6 +464,142 @@ myPosts: posts(since: $sinceTS, limit: 50) {
     publishedAt
 }
 ```
+
+## GraphQL Directives
+
+GraphQL allows attaching `@directive` annotations to fields, operations, and several other positions. Composer supports rendering directives in three positions -- selection-field, root-field, and operation-level -- through the `$d` proxy and the `directives(..)` combinator.
+
+These directives can be spec-mandated ones like `@skip` or client-custom ones like `@nonreactive`.
+
+### Producing Directives: `$d`
+
+`$d` is a proxy that produces directive tokens. The bare form renders the directive without arguments:
+
+```js
+$d.nonreactive
+// renders as: @nonreactive
+```
+
+Calling the token attaches arguments. Both literal and variable args are supported, and can be combined:
+
+```js
+$d.format(litArgs($m("style","short")))
+// renders as: @format(style:"short")
+
+$d.scoped(varArgs($v("scope","String")))
+// renders as: @scoped(scope:$scope)
+// hoists: $scope: String into operation var-defs
+
+$d.fancy(
+    varArgs($v("scope","String")),
+    litArgs($m("format","short"))
+)
+// renders as: @fancy(scope:$scope,format:"short")
+```
+
+### Operation-Level Directives
+
+Pass `directives(..)` at the top level of `raw(..)` / `query(..)` / etc. to attach directives to the operation itself (immediately after the operation name and var-defs, before the opening brace):
+
+```js
+query(
+    operationName("GetUser"),
+    directives(
+        $d.cached(litArgs($m("ttl",60))),
+        $d.nonreactive
+    ),
+    root("user"),
+    selectionSet("firstName"),
+)
+// renders: query GetUser @cached(ttl:60) @nonreactive { user { firstName } }
+```
+
+Operation-level directive args participate in variable hoisting like any other args:
+
+```js
+query(
+    directives(
+        $d.cached(varArgs($v("ttl","Int")))
+    ),
+    root("user"),
+    selectionSet("firstName"),
+)
+// renders: query Query($ttl:Int) @cached(ttl:$ttl) { user { firstName } }
+```
+
+### Root-Field Directives
+
+`root(..)` has a chained `.directives(..)` method for attaching directives to the root field. The method accepts one or more directive tokens:
+
+```js
+query(
+    operationName("GetUser"),
+    root("user").directives($d.cached),
+    selectionSet("firstName", "lastName"),
+)
+// renders: query GetUser { user @cached { firstName lastName } }
+```
+
+```js
+query(
+    operationName("GetUser"),
+    root("user").directives(
+        $d.cached(varArgs($v("ttl","Int"))),
+        $d.nonreactive
+    ),
+    selectionSet("firstName"),
+)
+// renders: query GetUser($ttl: Int) { user @cached(ttl: $ttl) @nonreactive { firstName } }
+```
+
+### Selection-Field Directives
+
+A single directive can be attached to a selection field by interpolating its token into the `$f` slot:
+
+```js
+selectionSet(
+    $f`email ${$d.nonreactive}`
+)
+// renders: email @nonreactive
+```
+
+Combined with field args and/or a sub-selection, use the array form to interpolate multiple units. Directives render after args, before any sub-selection block:
+
+```js
+selectionSet(
+    $m(
+        $f`books ${[
+            litArgs($m("limit",10)),
+            $d.nonreactive,
+        ]}`,
+        [ "title" ]
+    )
+)
+// renders: books(limit:10) @nonreactive { title }
+```
+
+For multiple directives on the same field, wrap them with the `directives(..)` combinator:
+
+```js
+$f`email ${
+    directives(
+        $d.nonreactive,
+        $d.format(litArgs($m("style","short")))
+    )
+}`
+// renders: email @nonreactive @format(style:"short")
+```
+
+### `@skip` and `@include`
+
+The spec-mandated conditional directives `@skip` and `@include` are specified with the generic `$d` proxy:
+
+```js
+$f`email ${$d.skip(litArgs($m("if",true)))}`
+// renders: email @skip(if:true)
+```
+
+**WARNING:** That verbosity (i.e., lack of any specific syntactic sugar) is a strong hint that this type of conditionality really belongs in the host-language (JS) conditional logic (such as an inline `? :` ternary), rather than embedded in the query string for the server to resolve. `@skip` and `@include` are generally an anti-pattern with this DSL, but you *can* specify them if the legitimate need arises.
 
 ## Query Result Object
 
@@ -513,10 +653,11 @@ Type definitions are bundled with the package. TypeScript projects will pick the
 
 The types cover the full public API surface, including:
 
-- Autocomplete on all helpers and the `$t` proxy
+- Autocomplete on all helpers and the `$t` / `$d` proxies
 - Branded clause types with a structural escape hatch for raw object literals
 - Detection of common construction mistakes (e.g., missing `root`)
 - Both calling forms of `$f` (function call and tagged template)
+- The chained `root().directives(..)` method
 
 The runtime is plain JavaScript; the types are an additive aid for editor tooling and don't affect behavior.
 

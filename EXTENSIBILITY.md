@@ -59,7 +59,7 @@ The three seams:
 
 2. **Field-level `argsWrapper`.** If a field's metadata carries an `argsWrapper` token, composer's argument renderer hands the already-rendered inner args string to `argsWrapper.render(renderCtx, innerArgsStr)`, and the wrapper produces the final args string — possibly wrapping the inner args in whatever syntactic shape it wants.
 
-3. **Root chunk `render`.** If the root chunk has a `render(rootRenderCtx)` function, composer's query-builder calls it to override the default `rootField`/`rootAlias` computation. This lets a plugin rewrite how the root field itself appears.
+3. **Root unit `render`.** If the root unit has a `render(rootRenderCtx)` function, composer's query-builder calls it to override the default `rootField`/`rootAlias` computation. This lets a plugin rewrite how the root field itself appears.
 
 The next two sections show seams 1 and 2 in action via a running example. Seam 3 is documented at the end since it's both less common and harder to demonstrate in miniature.
 
@@ -137,7 +137,7 @@ The `renderCtx` parameter exposes composer's renderer helpers; this simple wrapp
 
 ### Step 3: Wire up variable hoisting
 
-The wrapper renders the variable references as a plain string, but composer doesn't *know* about those variables unless we register them through composer's normal variable-bookkeeping path. The right move is to attach a `varArgs` chunk to the same field at the same time as the wrapper.
+The wrapper renders the variable references as a plain string, but composer doesn't *know* about those variables unless we register them through composer's normal variable-bookkeeping path. The right move is to attach a `varArgs` combinator to the same field at the same time as the wrapper.
 
 ```js
 function near(latVarName, lngVarName, radiusValue) {
@@ -177,7 +177,7 @@ The `$lat` and `$lng` variables hoist into the operation parameter list because 
 
 This is a deliberately minimal example. A real plugin would:
 
-- Use `_internals.makeFieldToken` to produce a proper `$f`-style token instead of returning a raw chunk shape.
+- Use `_internals.makeFieldToken` to produce a proper `$f`-style token instead of returning a raw unit shape.
 - Use `_internals.is$tToken` so callers could pass `$t.SomeType` in place of literal type strings.
 - Use the `renderCtx` to defer parts of inner rendering back to composer, instead of building the entire string by hand.
 
@@ -197,11 +197,11 @@ A render-protocol token can call these as it builds its output string, so it doe
 
 The simplest rule of thumb: if your token's render needs to emit something that *looks like* something composer already knows how to emit (a name, an args block, a sub-selection), it should delegate to `renderCtx` rather than hand-roll it.
 
-## Seam 3: Root Chunk `render`
+## Seam 3: Root Unit `render`
 
-The third render-protocol seam is on the root chunk itself. If the root chunk has a `render(rootRenderCtx)` function, composer's query-builder calls it during root rendering, and the function's return value overrides composer's default computation of `rootField` and `rootAlias`.
+The third render-protocol seam is on the root unit itself. If the root unit has a `render(rootRenderCtx)` function, composer's query-builder calls it during root rendering, and the function's return value overrides composer's default computation of `rootField` and `rootAlias`.
 
-This is used when a plugin needs to rewrite the root field's *appearance* entirely — for example, when the root field is an aggregate function applied to a collection (`COUNT(User: { ... })`) rather than a direct field reference (`User { ... }`). In that case, the root chunk's `render` function returns a custom `{ rootField, rootAlias }` shape that composer's renderer uses instead of its defaults.
+This is used when a plugin needs to rewrite the root field's *appearance* entirely — for example, when the root field is an aggregate function applied to a collection (`COUNT(User: { ... })`) rather than a direct field reference (`User { ... }`). In that case, the root unit's `render` function returns a custom `{ rootField, rootAlias }` shape that composer's renderer uses instead of its defaults.
 
 Unlike the previous two seams, this one is harder to motivate with a small standalone example, because the use case (overriding root rendering) doesn't have a clean one-liner. `@gql-x/plugin-defradb`'s 3-arg `root(field, alias, over)` form is the working production example. If you find yourself needing to rewrite how the root field renders, that's the pattern to study.
 
@@ -299,7 +299,7 @@ Most non-trivial plugins will want the DB layer.
 The composer extension story, summarized:
 
 - `registerPlugin()` is the plugin-author entry point. It returns `{ api, _internals }`; the internals expose token-minting and token-inspection hooks.
-- The render protocol has three seams: `litArgs` values, field-level `argsWrapper`, root chunk `render`. Plugin-defined tokens carry a `.render(...)` method composer dispatches to at the appropriate point.
+- The render protocol has three seams: `litArgs` values, field-level `argsWrapper`, root unit `render`. Plugin-defined tokens carry a `.render(...)` method composer dispatches to at the appropriate point.
 - `renderCtx` lets render-protocol tokens delegate sub-rendering back to composer instead of re-implementing it.
 - `@gql-x/composer/db` is an abstract scaffold built on those extension points, providing schema-name prefixing, transport spread, and a `decorate` hook. Most plugins will build on it rather than on bare composer.
 
