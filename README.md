@@ -6,7 +6,7 @@ A DSL for composing GraphQL query strings with nicer DX.
 
 Think of it as a spiritual successor to the older [`gql-query-builder`](https://www.npmjs.com/package/gql-query-builder) package; it solves the same problem (building GraphQL queries from host-language values rather than templated strings), but with better ergonomics around variable hoisting, dynamic composition, and field-level expressivity. None of the code or API is ported or shared; the kinship is in problem space and motivation, not in implementation.
 
-For design rationale and tradeoffs, see [DESIGN.md](./DESIGN.md). For details on the extension points composer exposes for building higher-level layers on top of it, see [EXTENSIBILITY.md](./EXTENSIBILITY.md).
+For usage examples across the DSL's surface, see [EXAMPLES.md](./EXAMPLES.md). For design rationale and tradeoffs, see [DESIGN.md](./DESIGN.md). For details on the extension points composer exposes for building higher-level layers on top of it, see [EXTENSIBILITY.md](./EXTENSIBILITY.md).
 
 ## Design Overview
 
@@ -101,6 +101,8 @@ query(
 ```
 
 Variables are declared inline where used, then hoisted into the parameter list (and de-duplicated/de-conflicted) by the builder (`raw()`, `query()`, etc), so you never have to type both a separate parameter declaration and the use-site reference.
+
+For more examples across the DSL's surface -- variables, literal arguments, sub-selections, aliasing, directives, type-conditional selections, and dynamic composition patterns -- see [EXAMPLES.md](./EXAMPLES.md).
 
 ## Fluent Helpers vs. Object Literal Forms
 
@@ -754,7 +756,7 @@ The extension points, the DB layer's full surface, and the render protocol that 
 
 ## TypeScript Support
 
-Type definitions are bundled with the package. TypeScript projects will pick them up automatically — no separate `@types/` install needed.
+Type definitions are bundled with the package. TypeScript projects will pick them up automatically; no separate `@types/` install needed.
 
 The types cover the full public API surface, including:
 
