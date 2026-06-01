@@ -209,7 +209,7 @@ test("GQL builtin type not prefixed in varDefs", () => {
 	assert.ok(!text.includes("Dev_Int"));
 });
 
-test("api.mutation() kind cannot be overridden by chunk", () => {
+test("api.mutation() kind cannot be overridden by unit", () => {
 	var { api } = registerPlugin();
 	var { kind } = api.mutation({
 		root: { field: "User" },

@@ -28,7 +28,7 @@ test("$v 3-arg form", () => {
 	);
 });
 
-test("$v compose merges chunks", () => {
+test("$v compose merges units", () => {
 	assert.deepEqual(
 		$v(
 			$v("foo","String"),
@@ -91,7 +91,7 @@ test("$m 2-arg null value", () => {
 	);
 });
 
-test("$m multi-chunk siblings merged under key", () => {
+test("$m multi-unit siblings merged under key", () => {
 	assert.deepEqual(
 		$m("order",
 			$m("title","asc"),
@@ -125,8 +125,8 @@ test("$m() throws with only name", () => {
 	assert.throws(() => $m("foo"));
 });
 
-test("$m() throws with mixed chunk and non-chunk trailing args", () => {
-	assert.throws(() => $m("foo",$m("a",1),"notAChunk"));
+test("$m() throws with mixed unit and non-unit trailing args", () => {
+	assert.throws(() => $m("foo",$m("a",1),"notAUnit"));
 });
 
 

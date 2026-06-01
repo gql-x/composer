@@ -402,7 +402,7 @@ test("subscription() presets kind:subscription", () => {
 	assert.ok(text.startsWith("subscription {"));
 });
 
-test("mutation() kind cannot be overridden by chunk", () => {
+test("mutation() kind cannot be overridden by unit", () => {
 	var { kind } = mutation(root("User"), { kind: "query" });
 	assert.equal(kind, "mutation");
 });

@@ -27,7 +27,7 @@ test("varArgs produces { varArgs: ... }", () => {
 	);
 });
 
-test("varArgs merges multiple chunks", () => {
+test("varArgs merges multiple units", () => {
 	assert.deepEqual(
 		varArgs(
 			$v("docID","ID"),
@@ -49,7 +49,7 @@ test("litArgs produces { litArgs: ... }", () => {
 	);
 });
 
-test("litArgs merges multiple chunks", () => {
+test("litArgs merges multiple units", () => {
 	assert.deepEqual(
 		litArgs(
 			$m("limit",50),
@@ -71,7 +71,7 @@ test("varDefs produces { varDefs: ... }", () => {
 	);
 });
 
-test("varDefs merges multiple chunks", () => {
+test("varDefs merges multiple units", () => {
 	assert.deepEqual(
 		varDefs(
 			$v("minRating","Int"),
