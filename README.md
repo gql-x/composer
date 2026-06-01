@@ -465,6 +465,81 @@ myPosts: posts(since: $sinceTS, limit: 50) {
 }
 ```
 
+## Type-Conditional Selections
+
+GraphQL lets a selection-set include type-conditional branches when the field's type is wider than a single concrete type -- typically interface or union types. The `... on TypeName { .. }` syntax narrows a branch of the selection to fields available only on `TypeName`; the server evaluates the condition per result and includes the branch when the runtime type matches.
+
+**TIP:** This pattern is common in API-style GraphQL backends (GitHub's API, Shopify, anything Relay-flavored).
+
+`$f.on` produces a type-conditional selection token, used as a key with `$m` (or as a computed property key) to attach the type-narrowed sub-selection.
+
+```js
+selectionSet(
+    "id",
+    $m($f.on("User"), [ "name", "email" ]),
+    $m($f.on("Post"), [ "title", "body" ]),
+)
+// renders: id ... on User { name email } ... on Post { title body }
+```
+
+Like `$f`, both calling forms work and are equivalent:
+
+```js
+// tag form
+$f.on`User`
+
+// function-call form
+$f.on("User")
+```
+
+The type name accepts either a string or a `$t` bare-name token:
+
+```js
+$f.on($t.User)
+// equivalent to: $f.on("User")
+```
+
+When `namePrefix` is in effect, the type name is prefixed the same way other type names are:
+
+```js
+// with namePrefix: "Dev_"
+$f.on("User")
+// renders: ... on Dev_User
+```
+
+### Constraints
+
+`$f.on` is intentionally narrower than `$f`. The following are rejected at construction time:
+
+* **No alias.** Inline fragments don't have aliases in GraphQL. `$f.on("alias", "User")` throws.
+
+* **No field arguments.** Inline fragments don't take arguments. `$f.on("User", varArgs(..))` and `$f.on("User", litArgs(..))` throw.
+
+The following is rejected at render time:
+
+* **Sub-selection required.** Inline fragments without a selection-set are a GraphQL parse error. `selectionSet($f.on("User"))` with no `$m` wrap throws.
+
+Directives, however, are allowed and compose the same way they do for any other field:
+
+```js
+selectionSet(
+    $m($f.on("User", $d.nonreactive), [ "name" ])
+)
+// renders: ... on User @nonreactive { name }
+```
+
+Type-conditional selections can be nested:
+
+```js
+selectionSet(
+    $m($f.on("User"), [
+        "name",
+        $m($f.on("AdminUser"), [ "permissions" ])
+    ])
+)
+// renders: ... on User { name ... on AdminUser { permissions } }
+```
+
 ## GraphQL Directives
 
 GraphQL allows attaching `@directive` annotations to fields, operations, and several other positions. Composer supports rendering directives in three positions -- selection-field, root-field, and operation-level -- through the `$d` proxy and the `directives(..)` combinator.
@@ -590,6 +665,36 @@ $f`email ${
 // renders: email @nonreactive @format(style:"short")
 ```
 
+### Type-Conditional Selection Directives
+
+Directives can be attached to an inline type-conditional selection via `$f.on`'s combinator slot:
+
+```js
+selectionSet(
+    $m($f.on("User", $d.nonreactive), [ "name" ])
+)
+// renders: ... on User @nonreactive { name }
+```
+
+The tag form works the same way:
+
+```js
+selectionSet(
+    $m($f.on`User ${$d.nonreactive}`, [ "name" ])
+)
+```
+
+For multiple directives, wrap with `directives(..)`:
+
+```js
+$f.on("User", directives($d.a, $d.b))
+// or in tag form:
+$f.on`User ${directives($d.a, $d.b)}`
+// renders: ... on User @a @b { ... }
+```
+
+See [Type-Conditional Selections](#type-conditional-selections) for the full surface.
+
 ### `@skip` and `@include`
 
 The spec-mandated conditional directives `@skip` and `@include` are specified with the generic `$d` proxy:
@@ -657,6 +762,7 @@ The types cover the full public API surface, including:
 - Branded clause types with a structural escape hatch for raw object literals
 - Detection of common construction mistakes (e.g., missing `root`)
 - Both calling forms of `$f` (function call and tagged template)
+- `$f.on` for type-conditional selections (both calling forms)
 - The chained `root().directives(..)` method
 
 The runtime is plain JavaScript; the types are an additive aid for editor tooling and don't affect behavior.

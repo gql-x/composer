@@ -183,6 +183,15 @@ export function $f(
 	strings: TemplateStringsArray,
 	...values: FieldInterpolation[]
 ): FieldToken & ((strings: TemplateStringsArray, ...values: FieldInterpolation[]) => FieldToken);
+export namespace $f {
+	// $f.on — inline-fragment / type-conditional selection
+	// requires a sub-selection at render time (via $m or computed property key)
+	function on(typeName: string | NameToken, ...combinators: (DirectiveToken | DirectiveClause | { directives: readonly DirectiveToken[] })[]): FieldToken;
+	function on(
+		strings: TemplateStringsArray,
+		...values: (DirectiveToken | DirectiveClause | { directives: readonly DirectiveToken[] })[]
+	): FieldToken;
+}
 
 export function operationName(name: string): OperationNameClause;
 export function root(field: string, alias?: string | null): RootChunk;

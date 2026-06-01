@@ -95,6 +95,64 @@ function buildComposer(opts = {}) {
 	$f.noSelection = null;
 
 
+	// *** $f.on: inline type condition tokens ***
+	// $f.on("User") or $f.on`User` => "... on User"
+	// requires a sub-selection (via $m or computed property key) at render time
+	// no alias, no field args; directives are allowed
+	$f.on = function $f_on(stringsOrTypeName,...values) {
+		// *** function-call mode ***
+		if (!Array.isArray(stringsOrTypeName) || !("raw" in stringsOrTypeName)) {
+			var firstArg = unwrapType(stringsOrTypeName);
+
+			if (!(typeof firstArg == "string" && firstArg != "")) {
+				throw new Error("$f.on(..) requires a type name (string or $t token) as first arg");
+			}
+			if (!isGQLName(firstArg)) {
+				throw new Error(`$f.on(..) invalid GQL name: ${firstArg}`);
+			}
+
+			// reject alias form: a second string would be alias-intent
+			if (values.length >= 1 && typeof values[0] == "string") {
+				throw new Error("$f.on(..) does not support alias form (inline fragments have no alias)");
+			}
+
+			var state = makeOnState(firstArg);
+
+			if (values.length > 0) {
+				mergeFieldDefs(state,mergeChunks(values,"$f.on(..) combinator"));
+			}
+
+			rejectOnStateExtras(state);
+
+			return makeFieldToken(state);
+		}
+
+		// *** tagged template mode ***
+		var strings = stringsOrTypeName;
+		var parsed = parseTaggedName(strings,values,{
+			allowInterpolation: true,
+			allowTrailingColon: false,
+		});
+
+		if (!isGQLName(parsed.name)) {
+			throw new Error(`$f.on(..) invalid GQL name: ${parsed.name}`);
+		}
+
+		// reject $f tokens as interpolation — they'd silently no-op
+		if (parsed.extra && is$fToken(parsed.extra)) {
+			throw new Error("$f.on(..) does not accept $f tokens as interpolation");
+		}
+
+		var state = makeOnState(parsed.name);
+
+		mergeFieldDefs(state,parsed.extra);
+
+		rejectOnStateExtras(state);
+
+		return makeFieldToken(state);
+	};
+
+
 	var api = {
 		$f, $t, $v, $m, $d,
 		varArgs, litArgs, varDefs, operationName,
@@ -119,6 +177,27 @@ function buildComposer(opts = {}) {
 
 
 	// ******************************
+
+	function makeOnState(typeName) {
+		return {
+			stage: "final",
+			pendingName: null,
+			alias: null,
+			field: null,
+			inlineTypeCondition: typeName,
+			argsWrapper: null,
+			varArgs: null,
+			litArgs: null,
+			directives: null,
+			sym: null,
+		};
+	}
+
+	function rejectOnStateExtras(state) {
+		if (state.varArgs != null || state.litArgs != null || state.argsWrapper != null) {
+			throw new Error("$f.on(..) does not accept field args (inline fragments have no args)");
+		}
+	}
 
 	function nameToken(name) {
 		if ($tCache.has(name)) return $tCache.get(name);
@@ -242,6 +321,9 @@ function buildComposer(opts = {}) {
 					if (!meta) {
 						throw new Error("Invalid $f interpolation token");
 					}
+					if (meta.inlineTypeCondition) {
+						throw new Error("Cannot alias an $f.on inline-type-condition token");
+					}
 					st.field = meta.field;
 					st.argsWrapper = meta.argsWrapper || null;
 					st.varArgs = meta.varArgs || null;
@@ -286,7 +368,7 @@ function buildComposer(opts = {}) {
 			}
 
 			if (!st.sym) {
-				st.sym = Symbol(st.field);
+				st.sym = Symbol(st.field || st.inlineTypeCondition || "");
 
 				$fMeta.set(st.sym,Object.freeze({
 					field: st.field,
@@ -295,6 +377,7 @@ function buildComposer(opts = {}) {
 					varArgs: st.varArgs || null,
 					litArgs: st.litArgs || null,
 					directives: st.directives || null,
+					inlineTypeCondition: st.inlineTypeCondition || null,
 				}));
 			}
 
@@ -315,11 +398,15 @@ function buildComposer(opts = {}) {
 				if (!meta) {
 					throw new Error("Invalid $f token");
 				}
+				if (meta.inlineTypeCondition) {
+					throw new Error("Cannot re-wrap an $f.on inline-type-condition token via $f(..)");
+				}
 				let state = {
 					stage: "final",
 					pendingName: null,
 					alias: null,
 					field: meta.field,
+					inlineTypeCondition: null,
 					argsWrapper: meta.argsWrapper || null,
 					varArgs: meta.varArgs || null,
 					litArgs: meta.litArgs || null,
@@ -343,11 +430,15 @@ function buildComposer(opts = {}) {
 				if (!meta) {
 					throw new Error("Invalid $f token");
 				}
+				if (meta.inlineTypeCondition) {
+					throw new Error("Cannot alias an $f.on inline-type-condition token");
+				}
 				let state = {
 					stage: "final",
 					pendingName: null,
 					alias: firstArg,
 					field: meta.field,
+					inlineTypeCondition: null,
 					argsWrapper: meta.argsWrapper || null,
 					varArgs: meta.varArgs || null,
 					litArgs: meta.litArgs || null,
@@ -380,6 +471,7 @@ function buildComposer(opts = {}) {
 				pendingName: null,
 				alias,
 				field: fieldName,
+				inlineTypeCondition: null,
 				argsWrapper: null,
 				varArgs: null,
 				litArgs: null,
@@ -409,6 +501,9 @@ function buildComposer(opts = {}) {
 			if (!meta) {
 				throw new Error("Invalid $f interpolation token");
 			}
+			if (meta.inlineTypeCondition) {
+				throw new Error("Cannot alias an $f.on inline-type-condition token");
+			}
 			extraConfig = {
 				field: meta.field,
 				argsWrapper: meta.argsWrapper,
@@ -423,6 +518,7 @@ function buildComposer(opts = {}) {
 			pendingName: parsed.name,
 			alias: null,
 			field: null,
+			inlineTypeCondition: null,
 			argsWrapper: null,
 			varArgs: null,
 			litArgs: null,
@@ -1163,6 +1259,12 @@ function buildComposer(opts = {}) {
 					throw new Error("Invalid selectionSet ($f token not registered)");
 				}
 
+				// inline-type-condition tokens must have a sub-selection;
+				// they cannot appear bare at the top of a selection array.
+				if (meta.inlineTypeCondition) {
+					throw new Error("$f.on inline fragment requires a sub-selection; use $m or a computed property key");
+				}
+
 				let { varDefs, argsStr, } = renderArgsFromFieldMeta(
 					meta,
 					namePrefix,
@@ -1200,6 +1302,37 @@ function buildComposer(opts = {}) {
 							throw new Error("Invalid selectionSet (unknown symbol key)");
 						}
 
+						let subSel = sel[k];
+
+						// inline-type-condition branch — different shape entirely:
+						// "... on TypeName <directives> { subSel }"; no alias, no args.
+						if (meta.inlineTypeCondition) {
+							if (subSel == null) {
+								throw new Error("$f.on inline fragment requires a sub-selection");
+							}
+
+							let typeName = normalizeType(
+								meta.inlineTypeCondition,
+								namePrefix,
+								nonPrefixedTypes
+							);
+
+							let label = `${ctxLabel}.on(${meta.inlineTypeCondition})`;
+
+							let { varDefs: dirVarDefs, directivesStr, } = renderDirectivesFromFieldMeta(
+								meta,
+								namePrefix,
+								nonPrefixedTypes,
+								label
+							);
+							mergeDefs(dirVarDefs,`${label}.directives`);
+
+							parts.push(
+								`... on ${typeName}${directivesStr} { ${render(subSel,label)} }`
+							);
+							continue;
+						}
+
 						let { varDefs, argsStr, } = renderArgsFromFieldMeta(
 							meta,
 							namePrefix,
@@ -1217,7 +1350,6 @@ function buildComposer(opts = {}) {
 						mergeDefs(dirVarDefs,`${ctxLabel}.${meta.field}.directives`);
 
 						let aliasStr = meta.alias ? `${meta.alias}: ` : "";
-						let subSel = sel[k];
 
 						parts.push(
 							`${aliasStr}${meta.field}${argsStr}${directivesStr}${

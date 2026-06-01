@@ -4,7 +4,10 @@ import { createComposer, } from "@gql-x/composer";
 
 export const test = module("units");
 
-var { $d, $f, $t, $v, $m, } = createComposer();
+var {
+	$d, $f, $t, $v, $m,
+	varArgs, litArgs,
+} = createComposer();
 
 
 // ************************
@@ -207,6 +210,51 @@ test("$f interpolation must come after name throws", () => {
 		var obj = {};
 		$f`name ${obj} extra`;
 	});
+});
+
+
+// ************************
+// $f.on — function-call mode (errors)
+// ************************
+
+test("$f.on() throws with no args", () => {
+	assert.throws(() => $f.on());
+});
+
+test("$f.on() throws with invalid first arg type", () => {
+	assert.throws(() => $f.on(42));
+	assert.throws(() => $f.on(null));
+});
+
+test("$f.on() throws with invalid GQL name", () => {
+	assert.throws(() => $f.on("bad-name"));
+});
+
+test("$f.on() rejects alias form (second string arg)", () => {
+	assert.throws(() => $f.on("alias","User"));
+});
+
+test("$f.on() rejects field args", () => {
+	assert.throws(() => $f.on("User",varArgs($v("x","Int"))));
+	assert.throws(() => $f.on("User",litArgs($m("x",1))));
+});
+
+
+// ************************
+// $f.on — tagged template (errors)
+// ************************
+
+test("$f.on tag form throws on invalid GQL name", () => {
+	assert.throws(() => $f.on`bad-name`);
+});
+
+test("$f.on tag form rejects field args via interpolation", () => {
+	assert.throws(() => $f.on`User ${varArgs($v("x","Int"))}`);
+	assert.throws(() => $f.on`User ${litArgs($m("x",1))}`);
+});
+
+test("$f.on tag form rejects $f tokens as interpolation", () => {
+	assert.throws(() => $f.on`User ${$f`field`}`);
 });
 
 
