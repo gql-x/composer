@@ -15,7 +15,7 @@ var {
     $d, $f, $t, $v, $m,
     varArgs, litArgs, varDefs, directives,
     selectionSet, root, operationName,
-    query, mutation, subscription, raw,
+    query, mutation, subscription, raw
 } = createComposer();
 ```
 
@@ -47,6 +47,7 @@ type User {
     id: ID
     firstName: String
     lastName: String
+    email: String
     posts(since: Int): [Post]
 }
 
@@ -77,7 +78,7 @@ The minimum: a root field and a selection-set of scalar fields.
 ```js
 query(
     root("viewer"),
-    selectionSet("id", "name")
+    selectionSet("id", "name", "email")
 )
 ```
 
@@ -86,6 +87,7 @@ query {
     viewer {
         id
         name
+        email
     }
 }
 ```
@@ -94,7 +96,7 @@ The builder returns a result object, not just the text. The shape stays the same
 
 ```js
 {
-    text: "query { viewer { id name } }",
+    text: "query { viewer { id name email } }",
     opName: null,
     resName: "viewer",
     kind: "query"
@@ -241,7 +243,11 @@ query(
 
 ```graphql
 query RecentPostsByAuthor($authorID: ID) {
-    posts(authorID: $authorID, limit: 10, order: { publishedAt: DESC }) {
+    posts(
+        authorID: $authorID,
+        limit: 10,
+        order: { publishedAt: DESC }
+    ) {
         title
         publishedAt
     }
@@ -291,7 +297,9 @@ query(
     selectionSet(
         "firstName",
         $m(
-            $f`posts ${varArgs($v("since", "sinceTS", "Int"))}`,
+            $f`posts ${
+                varArgs($v("since", "sinceTS", "Int"))
+            }`,
             [ "title", "publishedAt" ]
         )
     )
@@ -386,7 +394,9 @@ query(
     selectionSet(
         "firstName",
         $m(
-            $f`recentPosts``posts ${varArgs($v("since", "sinceTS", "Int"))}`,
+            $f`recentPosts``posts ${
+                varArgs($v("since", "sinceTS", "Int"))
+            }`,
             [ "title", "publishedAt" ]
         )
     )
@@ -455,3 +465,243 @@ subscription OnPostPublished($authorID: ID) {
 ```
 
 The result object's `kind` field reflects which builder was used (`"query"`, `"mutation"`, or `"subscription"`).
+
+## Host-Language Composition
+
+So far, we've shown queries as standalone expressions, but those are just snapshots. Composer's main reason for existing is that those units/clauses are *JS values*, and JS values compose *best* using the host language's full vocabulary: conditionals, function abstraction, array spread, reusable bindings. This section shows the patterns that vocabulary makes natural.
+
+### Conditional Inclusion via Spread
+
+When a field should appear in a selection-set only under certain conditions, the cleanest pattern is an inline ternary that spreads either a one-element array (the field) or an empty array (skip):
+
+```js
+function getUser(includeEmail, includePosts, includePostBody) {
+    return query(
+        operationName("GetUser"),
+        root("user"),
+        varArgs($v("id", "ID")),
+        selectionSet(
+            "firstName",
+            "lastName",
+            ...(includeEmail ? [ "email" ] : []),
+            ...(includePosts ? [
+                $m("posts", [
+                    "title",
+                    "publishedAt",
+                    ...(includePostBody ? [ "body" ] : [])
+                ])
+            ] : [])
+        )
+    );
+}
+```
+
+Three independent boolean flags, each gating a different position in the query. Two of those positions are nested at different selection-set depths; the same spread pattern works identically at any depth.
+
+Two call sites:
+
+```js
+getUser(true, false, false)
+```
+
+```graphql
+query GetUser($id: ID) {
+    user(id: $id) {
+        firstName
+        lastName
+        email
+    }
+}
+```
+
+```js
+getUser(false, true, true)
+```
+
+```graphql
+query GetUser($id: ID) {
+    user(id: $id) {
+        firstName
+        lastName
+        posts {
+            title
+            publishedAt
+            body
+        }
+    }
+}
+```
+
+The same technique applies to argument positions. `varArgs(..)` and `litArgs(..)` both accept the unit-objects produced by `$v` / `$m`, so spreading conditional units into them works the same way:
+
+```js
+litArgs(
+    $m("limit", 10),
+    ...(
+        orderBy ?
+            [ $m("order", $m(orderBy, $t.DESC)) ] :
+            []
+    )
+)
+```
+
+### Query Factory Functions
+
+The previous example is already a factory; wrapping `query(..)` in a named function with parameters is the recommended packaging pattern for any non-trivial query. The function's name and signature convey intent at the call site, while the DSL composition stays encapsulated inside.
+
+Factories aren't limited to gating inclusion. Parameters can drive the *structure* of arguments as well, including positions that GraphQL's built-in conditionality (`@skip` / `@include`) can't reach:
+
+```js
+function getPostsByAuthor(orderField) {
+    return query(
+        operationName("PostsByAuthor"),
+        root("posts"),
+        varArgs($v("authorID", "ID")),
+        litArgs(
+            $m("limit", 10),
+            $m("order", $m(orderField, $t.DESC))
+        ),
+        selectionSet("title", "publishedAt")
+    );
+}
+```
+
+The `orderField` parameter becomes a key inside the `order` argument map. Two calls produce two structurally different queries:
+
+```js
+getPostsByAuthor("publishedAt")
+```
+
+```graphql
+query PostsByAuthor($authorID: ID) {
+    posts(
+        authorID: $authorID,
+        limit: 10,
+        order: { publishedAt: DESC }
+    ) {
+        title
+        publishedAt
+    }
+}
+```
+
+```js
+getPostsByAuthor("title")
+```
+
+```graphql
+query PostsByAuthor($authorID: ID) {
+    posts(
+        authorID: $authorID,
+        limit: 10,
+        order: { title: DESC }
+    ) {
+        title
+        publishedAt
+    }
+}
+```
+
+A directive-based approach would have to enumerate both branches inline and toggle one off at execution time, and that only works at all because the alternatives differ by a single key. A factory parameterized by host data has no such restriction.
+
+The naming side of factories also addresses an ergonomic concern: the DSL is intent-heavy rather than shape-heavy, so a bare DSL expression doesn't read like a GraphQL query at a glance. A well-named function around the DSL call (`getPostsByAuthor`, `getUserProfile`) restores that glance-readability at the call site, while the composition logic stays where it belongs.
+
+### Reusable Selection Pieces
+
+A reusable chunk of selection-set is just a JS array. Define it once, spread it in wherever it's needed:
+
+```js
+var userCoreFields = [
+    "firstName",
+    "lastName",
+    "email"
+];
+
+function getUserBasic() {
+    return query(
+        operationName("GetUserBasic"),
+        root("user"),
+        varArgs($v("id", "ID")),
+        selectionSet(...userCoreFields)
+    );
+}
+
+function getUserWithPosts() {
+    return query(
+        operationName("GetUserWithPosts"),
+        root("user"),
+        varArgs($v("id", "ID")),
+        selectionSet(
+            ...userCoreFields,
+            $m("posts", [ "title", "publishedAt" ])
+        )
+    );
+}
+```
+
+```graphql
+query GetUserBasic($id: ID) {
+    user(id: $id) {
+        firstName
+        lastName
+        email
+    }
+}
+```
+
+```graphql
+query GetUserWithPosts($id: ID) {
+    user(id: $id) {
+        firstName
+        lastName
+        email
+        posts {
+            title
+            publishedAt
+        }
+    }
+}
+```
+
+This is the named-fragment replacement. The array is the reusable shape, JS is the composition vocabulary, spread is the inclusion point. Unlike GraphQL fragments, the array isn't tied to a specific GraphQL type at the language level; it's just data, useable wherever it composes structurally.
+
+The real power comes when the reusable piece itself takes parameters. GraphQL fragments cannot do this; JS functions trivially can:
+
+```js
+function postFields({ includeBody } = {}) {
+    return [
+        "title",
+        "publishedAt",
+        ...(includeBody ? [ "body" ] : [])
+    ];
+}
+
+function getUserWithPostDetails() {
+    return query(
+        operationName("GetUserWithPostDetails"),
+        root("user"),
+        varArgs($v("id", "ID")),
+        selectionSet(
+            ...userCoreFields,
+            $m("posts", postFields({ includeBody: true }))
+        )
+    );
+}
+```
+
+```graphql
+query GetUserWithPostDetails($id: ID) {
+    user(id: $id) {
+        firstName
+        lastName
+        email
+        posts {
+            title
+            publishedAt
+            body
+        }
+    }
+}
+```
+
+`postFields` is a parameterized selection-shape: a value that can be called with options to produce a tailored array of fields. The composing query treats it like any other array, because that's what it is.

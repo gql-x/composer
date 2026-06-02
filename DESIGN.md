@@ -6,13 +6,15 @@ For the API reference, see [README.md](./README.md). For the rationale behind co
 
 ## What This DSL Is For
 
-Two primary pain points motivated the design:
+Three primary pain points motivated the design:
 
 1. **Variable bookkeeping.** In raw GraphQL strings, every variable has to be declared in the operation's parameter list *and* referenced at each use site. Adding, removing, or renaming a variable means editing multiple positions, and the parameter list lives far from the places it's actually used. The DSL annotates a variable's type at its use site and hoists the declaration automatically, with deduplication.
 
-2. **Dynamic composition.** Arguments, selection-sets, and field-level references are first-class JS values in the DSL. They can be conditionally included, named, passed around, and combined using ordinary host-language logic — no string templating, no parameter-list maintenance.
+2. **Dynamic composition.** Arguments, selection-sets, and field-level references are first-class JS values in the DSL. They can be conditionally included, named, passed around, and combined using ordinary host-language logic; no string templating, no parameter-list maintenance.
 
-A third theme runs through the design: **shifting meaning from syntactic position to explicit names.**
+    See [Host-Language Composition Examples](./EXAMPLES.md#host-language-composition) for detailed illustration.
+
+3. **Shifting meaning from syntactic position to explicit names.** Names like `selectionSet` tell you *what* something is by name, rather than having to track where you are in the indentation and nested `{ }` sets.
 
 ## On GraphQL's Native Composition Mechanisms
 
@@ -55,6 +57,8 @@ In short, GraphQL's built-in composition mechanisms cover *value parameterizatio
 That last category is the gap Composer is built for, and it's exactly where host-language composition has the cleanest fit; the language doing the composition is the same language that knows the conditions.
 
 And the host language is a full Turing-complete language (like JS, etc) with proper and familiar mechanisms for decision making, looping, reuse, etc. That contrasts sharply against ad hoc, limited, in-GraphQL affordances like @directives and fragments.
+
+For concrete examples of these host-language mechanisms in action, including conditional inclusion via spread, query factories, and reusable selection pieces, see [Host-Language Composition Examples](./EXAMPLES.md#host-language-composition).
 
 ## Where Composer Fits in the GraphQL Ecosystem
 
