@@ -10,13 +10,17 @@ For usage examples across the DSL's surface, see [EXAMPLES.md](./EXAMPLES.md). F
 
 ## Design Overview
 
-Two primary goals motivate the design:
+Three primary goals motivate the design:
 
 1. **Reduce variable bookkeeping.** Annotate a variable's type at its use site; the builder hoists the declaration into the operation's parameter list and deduplicates automatically.
 
-2. **First-class dynamic composition.** Query fragments (arguments, selection-sets, etc) are plain JS values that can be conditionally included, named, passed around, and combined using ordinary host-language logic. No string templating, no parameter-list maintenance.
+2. **First-class dynamic composition.** Query units/clauses (arguments, selection-sets, etc) are plain JS values that can be conditionally included, named, passed around, and combined using ordinary host-language logic. No string templating, no parameter-list maintenance.
 
-A third theme runs throughout: meaning is conveyed by explicit names (`selectionSet`, `varArgs`, `litArgs`) rather than syntactic position. This trades raw-GraphQL positional convention for label-driven composition that can be reordered to foreground whatever matters most about a given query.
+    GraphQL itself offers some in-language mechanisms for varying what a query expresses: variables, named fragments, inline type conditions, and the `@skip` / `@include` directives. These cover value parameterization, reference reuse, and type-narrowing well, but none of them address shape assembly from host-side conditions: queries whose selection-sets, arguments, or sub-selections depend on user input, feature flags, or permissions. That gap is where Composer is meant to fit. For the longer argument, see [On GraphQL's Native Composition Mechanisms](./DESIGN.md#on-graphqls-native-composition-mechanisms).
+
+3. **Meaning is conveyed by explicit names (`selectionSet`, `varArgs`, `litArgs`) rather than syntactic position.** This trades raw-GraphQL positional convention for label-driven composition that can be reordered to foreground whatever matters most about a given query.
+
+For an in-depth explanation of the design, see [DESIGN.md](./DESIGN.md).
 
 ## Getting Started
 

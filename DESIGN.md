@@ -14,6 +14,48 @@ Two primary pain points motivated the design:
 
 A third theme runs through the design: **shifting meaning from syntactic position to explicit names.**
 
+## On GraphQL's Native Composition Mechanisms
+
+GraphQL itself has several mechanisms for varying what a query expresses. Before discussing host-language composition further, it's worth exploring where they fall short of the composition problem Composer addresses.
+
+### Variables
+
+GraphQL variables parameterize values: a `$userID` argument can vary per request without changing the query string. This is the cleanest in-language mechanism GraphQL offers, and Composer leans on it heavily; variable hoisting is one of Composer's two motivating problems.
+
+But variables **vary values, not shape**. A query that needs a different field included, a different argument passed, or a different sub-selection structure depending on conditions -- that can't be expressed with variables alone.
+
+### Named Fragments
+
+Fragments let a reusable selection shape be declared once and referenced by name in multiple positions. They're useful for DRY-ing repeated sub-selections.
+
+But the fragment itself is static; `UserCore` is the same `UserCore` everywhere. Fragments compose by reference, not by parameterization or conditional assembly.
+
+### Inline fragments / type conditions (`... on Type`)
+
+These handle polymorphism: when a field's type is wider than a single concrete type (interfaces, unions), an inline fragment narrows a branch of the selection-set.
+
+This is a different axis from the conditionality discussed here; it's about type-narrowing at server-side resolution, not about choosing query shape at the client. Composer supports the type-condition form via `$f.on`, because the use case is real and orthogonal.
+
+### `@skip` / `@include` Directives
+
+These are the closest match to "conditional composition" in spec GraphQL: a directive on a field that suppresses it based on a variable's value. The query text contains both branches; the server evaluates the directive at execution time and omits the field from the response.
+
+This last one is worth expanding on, because it's the mechanism that *looks* like it solves the problem Composer addresses. It doesn't, for several reasons:
+
+* **Conditionality runs at the wrong end.** The host already knows whether the field is wanted; it's the host that set the variable. Pushing the decision to the server means parsing, validating, planning, and possibly resolving branches the host could have simply omitted. The server does work to answer a question the host already had the answer to.
+
+* **The branches are static.** `@skip` and `@include` toggle a fixed branch. They don't let the *shape* of the branch vary; only its presence. A query that needs five different possible sub-selection shapes can't express that with `@skip` without enumerating all five inline and toggling four of them off.
+
+* **No composition vocabulary.** `@skip` / `@include` are boolean toggles keyed on a single variable. There's no `@skipUnless`, no boolean combinators, no expressions. Any non-trivial conditional logic has to be evaluated host-side and reduced to a boolean before being passed in as a variable; at which point the host could have just composed the query directly and skipped the round-trip through directive evaluation.
+
+* **Composition doesn't extend.** Once you reach for `@skip` for one branch, the next conditional concern doesn't compose with it; it has to be solved the same way, inline, in the query text. The complexity grows with the surface, not with the underlying logic.
+
+In short, GraphQL's built-in composition mechanisms cover *value parameterization* (variables), *reference reuse* (named fragments), and *type-narrowing* (inline fragments). They don't cover *shape assembly from host-side conditions*.
+
+That last category is the gap Composer is built for, and it's exactly where host-language composition has the cleanest fit; the language doing the composition is the same language that knows the conditions.
+
+And the host language is a full Turing-complete language (like JS, etc) with proper and familiar mechanisms for decision making, looping, reuse, etc. That contrasts sharply against ad hoc, limited, in-GraphQL affordances like @directives and fragments.
+
 ## Where Composer Fits in the GraphQL Ecosystem
 
 Most production GraphQL workflows put *something* between the developer and the raw query string. Codegen generates queries from schemas. Relay rewrites them at build time. Apollo wraps them in framework-specific machinery. Even `gql-tag` is, at minimum, a tagged-template function whose job is to mark a string as GraphQL for downstream tooling. The bare hand-typed string handed straight to the network layer is uncommon at scale — and where it does appear, it usually does so alongside other tooling that has already done some structural work.
