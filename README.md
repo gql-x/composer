@@ -216,7 +216,7 @@ The following options are recognized:
 
     Produces operation parameters: `$userID: ID, $limit: Int`, and operation arguments: `id: $userID, limit: $limit`.
 
-* `litArgs` (option): operation-level (and field-level) arguments with literal values. Leaf values can be built-in JS types (`42`, `"hello"`, `true`), bare-tokens via `$t` (e.g., `$t.DESC`), or manual variable references via `$t` (e.g., `$t.$orderBy`).
+* `litArgs` (option): operation-level (and field-level) arguments with literal values. Leaf values can be built-in JS types (`42`, `"hello"`, `true`), bare-tokens via `$t` (e.g., `$t.DESC`), or manual variable references via `$v` (e.g., `$v.orderBy`).
 
     For example:
 
@@ -229,7 +229,7 @@ The following options are recognized:
 
     Produces: `order: { lastName: DESC }, limit: 50`.
 
-* `varDefs` (option): manual variable type-defs. Adds explicit parameter declarations to the operation without tying them to any specific argument position; useful when a variable is referenced manually via `$t.$varName` in literal-based arguments.
+* `varDefs` (option): manual variable type-defs. Adds explicit parameter declarations to the operation without tying them to any specific argument position; useful when a variable is referenced manually via `$v.varName` in literal-based arguments.
 
     For example:
 
@@ -237,7 +237,7 @@ The following options are recognized:
     varDefs($v("orderBy","String"))
     ```
 
-    Adds `$orderBy: String` to the operation's variable type definitions. The variable can then be referenced in `litArgs` (operation-level or field-level) via `$t.$orderBy`.
+    Adds `$orderBy: String` to the operation's variable type definitions. The variable can then be referenced in `litArgs` (operation-level or field-level) via `$v.orderBy`.
 
 * `selectionSet` (option): the fields to include in the selection-set.
 
@@ -298,6 +298,15 @@ $v("id","userID","ID")
 $v("id",$t.ID)
 ```
 
+Manual variable references (for use alongside `varDefs`) can also be made with `$v.varName`; alternatively, if you prefer, `$v.$varName` with the `$` prefix on `varName` works the same.
+
+Either way, the reference renders as `$varName` (with the necessary `$` sigil):
+
+```js
+$v.email    // $email
+$v.$email   // $email
+```
+
 ### `$t`: Bare-Name Tokens
 
 `$t` is a proxy that produces bare-name tokens for use in literal-based argument positions.
@@ -308,11 +317,13 @@ $t.UTC_NOW   // renders as: UTC_NOW
 $t.String    // renders as: String  (usable as a type string)
 ```
 
-A leading `$` on the property name marks it as a manual variable reference (for use alongside `varDefs`):
+A leading `$` on the property name marks it as a manual variable reference (same as `$v.varName`):
 
 ```js
 $t.$orderBy  // renders as: $orderBy
 ```
+
+**TIP:** While `$t.$orderBy` (`$` prefix on `orderBy` required!) works for consistency, the *preferred* way to express a manual variable reference is `$v.orderBy`.
 
 Bare tokens can appear anywhere a literal value is expected: inside `litArgs`, as type strings in `$v` / variable specs, etc.
 

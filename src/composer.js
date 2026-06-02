@@ -21,7 +21,24 @@ var $tReserved = new Set([
 	"arguments",
 	"render",
 ]);
-
+var $vReserved = new Set([
+	"then",
+	"toString",
+	"valueOf",
+	"inspect",
+	"constructor",
+	"__proto__",
+	"prototype",
+	"caller",
+	"callee",
+	"arguments",
+	"render",
+	"apply",
+	"call",
+	"bind",
+	"name",
+	"length",
+]);
 var $dReserved = new Set([
 	"then",
 	"toString",
@@ -76,6 +93,65 @@ function buildComposer(opts = {}) {
 		},
 	});
 
+	// *** $v: variable helper + varref token proxy ***
+	// $v(name, type) / $v(name, varName, type) — declare a variable
+	// $v(...units) — compose units
+	// $v.foo / $v.$foo — produce a varref token rendering as `$foo`
+	var $v = new Proxy(
+		function $vImpl(...args) {
+			if (
+				args.length >= 1 &&
+				!(typeof args[0] == "string" && args[0] != "")
+			) {
+				return mergeChunks(args,"$v(..) part");
+			}
+
+			let [ name, a, b ] = args;
+			a = unwrapType(a);
+			b = unwrapType(b);
+
+			if (!(typeof name == "string" && name != "")) {
+				throw new Error("$v(..) requires a field/arg name");
+			}
+
+			if (
+				typeof a == "string" &&
+				a != "" &&
+				b === undefined
+			) {
+				return {
+					[name]: a,
+				};
+			}
+
+			if (
+				typeof a == "string" &&
+				a != "" &&
+				typeof b == "string" &&
+				b != ""
+			) {
+				return {
+					[name]: { [a]: b },
+				};
+			}
+
+			throw new Error("$v(..) expects (name,type) or (name,varName,type)");
+		},
+		{
+			get(t,p,r) {
+				if (typeof p == "symbol") return Reflect.get(t,p,r);
+				if ($vReserved.has(p)) return Reflect.get(t,p,r);
+
+				// strip optional leading $; $v.$foo and $v.foo both mean varref `foo`
+				let varName = (p[0] == "$" ? p.slice(1) : p);
+
+				if (!isGQLName(varName)) return undefined;
+
+				// mint as a $-prefixed bare-name token, identical to what $t.$foo produces
+				return nameToken(`$${varName}`);
+			},
+		}
+	);
 
 	// *** $d: graphql directive proxy ***
 	// $d.foo => single-directive clause (no args)
@@ -535,46 +611,6 @@ function buildComposer(opts = {}) {
 		}
 
 		return makeFieldToken(state);
-	}
-
-	function $v(...args) {
-		if (
-			args.length >= 1 &&
-			!(typeof args[0] == "string" && args[0] != "")
-		) {
-			return mergeChunks(args,"$v(..) part");
-		}
-
-		let [ name, a, b ] = args;
-		a = unwrapType(a);
-		b = unwrapType(b);
-
-		if (!(typeof name == "string" && name != "")) {
-			throw new Error("$v(..) requires a field/arg name");
-		}
-
-		if (
-			typeof a == "string" &&
-			a != "" &&
-			b === undefined
-		) {
-			return {
-				[name]: a,
-			};
-		}
-
-		if (
-			typeof a == "string" &&
-			a != "" &&
-			typeof b == "string" &&
-			b != ""
-		) {
-			return {
-				[name]: { [a]: b },
-			};
-		}
-
-		throw new Error("$v(..) expects (name,type) or (name,varName,type)");
 	}
 
 	function $m(name,...rest) {

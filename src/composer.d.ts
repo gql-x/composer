@@ -173,8 +173,15 @@ export interface RootChunk extends RootClause {
 }
 
 // ---------- Helper function declarations ----------
-export function $v(name: string, type: string): VarToken;
-export function $v(name: string, varName: string, type: string): VarToken;
+export interface VProxy {
+    (name: string, type: string): VarToken;
+    (name: string, varName: string, type: string): VarToken;
+    (...units: object[]): object;  // composition form
+
+    readonly [key: `$${string}`]: VarRefToken;
+    readonly [key: string]: VarRefToken;
+}
+export const $v: VProxy;
 
 export function $m(name: string, value: unknown): MapToken;
 

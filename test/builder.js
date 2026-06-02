@@ -117,12 +117,12 @@ test("$t bare token in litArgs renders without quotes", () => {
 	assert.ok(text.includes("User(order:{createdAt:DESC})"));
 });
 
-test("$t.$varName manual variable reference in litArgs", () => {
+test("$v.varName manual variable reference in litArgs", () => {
 	var { text, } = query(
 		operationName("User"),
 		root("User"),
 		varDefs($v("limitCount","Int")),
-		litArgs($m("limit",$t.$limitCount))
+		litArgs($m("limit",$v.limitCount))
 	);
 	assert.ok(text.startsWith("query User($limitCount:Int) {"));
 	assert.ok(text.includes(`User(limit:$limitCount`));

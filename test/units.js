@@ -60,6 +60,25 @@ test("$v() throws with wrong arg types", () => {
 
 
 // ************************
+// $v.varName manual references
+// ************************
+
+test("$v.varName / $v.$varName / $t.$varName returns $-prefixed token", () => {
+	var tok1 = $v.email;
+	var tok2 = $v.$email;
+	var tok3 = $t.$email;
+	assert.equal(String(tok1), "$email");
+	assert.equal(String(tok2), "$email");
+	assert.equal(String(tok3), "$email");
+});
+
+test("$v.invalid  returns undefined", () => {
+	assert.equal($v["bad-name"], undefined);
+	assert.equal($v["123abc"], undefined);
+});
+
+
+// ************************
 // $m
 // ************************
 
@@ -144,11 +163,6 @@ test("$t caches tokens (same identity for same name)", () => {
 	assert.equal($t.DESC, $t.DESC);
 });
 
-test("$t.$varName returns $-prefixed token", () => {
-	var tok = $t.$email;
-	assert.equal(String(tok), "$email");
-});
-
 test("$t reserved property names return undefined", () => {
 	assert.equal($t.then, undefined);
 	assert.equal($t.toString, undefined);
@@ -158,11 +172,6 @@ test("$t reserved property names return undefined", () => {
 test("$t invalid GQL name returns undefined", () => {
 	assert.equal($t["bad-name"], undefined);
 	assert.equal($t["123abc"], undefined);
-});
-
-test("$t.$invalid returns undefined", () => {
-	assert.equal($t["$bad-name"], undefined);
-	assert.equal($t["$123abc"], undefined);
 });
 
 test("$t tokens are isolated across composer instances", () => {
